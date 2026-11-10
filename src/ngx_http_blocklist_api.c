@@ -255,12 +255,163 @@ api_delete_ip(ngx_http_request_t *r)
 }
 
 
+typedef struct {
+    u_char      *data;
+    size_t       len;
+    size_t       cap;
+    ngx_pool_t  *pool;
+    ngx_int_t    error;
+} list_buf_t;
+
+
+static void
+list_buf_init(list_buf_t *b, ngx_pool_t *pool)
+{
+    ngx_memzero(b, sizeof(*b));
+    b->pool  = pool;
+    b->error = NGX_OK;
+}
+
+
+static ngx_int_t
+list_buf_reserve(list_buf_t *b, size_t need)
+{
+    size_t   newcap;
+    u_char  *newdata;
+
+    if (b->error != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    if (b->len + need <= b->cap) {
+        return NGX_OK;
+    }
+
+    newcap = b->cap ? b->cap : 4096;
+    while (newcap < b->len + need) {
+        newcap *= 2;
+    }
+
+    newdata = ngx_pnalloc(b->pool, newcap);
+    if (newdata == NULL) {
+        b->error = NGX_ERROR;
+        return NGX_ERROR;
+    }
+    if (b->len) {
+        ngx_memcpy(newdata, b->data, b->len);
+    }
+    b->data = newdata;
+    b->cap  = newcap;
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+list_walk_cb(const ngx_http_blocklist_node_t *node, void *data)
+{
+    list_buf_t  *b = data;
+    u_char       tmp[128];
+    u_char      *p;
+    u_char       ip_buf[64];
+    ngx_str_t    ip_s;
+
+    ip_s.data = ip_buf;
+    ip_s.len  = ngx_http_blocklist_addr_to_str(node->addr, node->family,
+                                                ip_buf, sizeof(ip_buf));
+
+    p = ngx_snprintf(tmp, sizeof(tmp),
+                     "{\"ip\":\"%V\",\"expire\":%T},",
+                     &ip_s, node->expire);
+
+    if (list_buf_reserve(b, (size_t) (p - tmp)) != NGX_OK) {
+        return NGX_ERROR;
+    }
+    ngx_memcpy(b->data + b->len, tmp, (size_t) (p - tmp));
+    b->len += (size_t) (p - tmp);
+    return NGX_OK;
+}
+
+
 static ngx_int_t
 api_get_list(ngx_http_request_t *r)
 {
-    /* Task 5 implements. */
-    ngx_http_discard_request_body(r);
-    return send_error_json(r, NGX_HTTP_NOT_IMPLEMENTED, "NOT_IMPLEMENTED");
+    static const char  prefix[] = "{\"ok\":true,\"data\":[";
+    const size_t       prefix_len = sizeof(prefix) - 1;
+
+    u_char                       q_buf[64];
+    size_t                       q_len = 0;
+    ngx_str_t                    q_str;
+    u_char                       addr[16];
+    uint8_t                      family;
+    time_t                       expire;
+    ngx_int_t                    rc;
+    ngx_http_blocklist_shctx_t  *shctx;
+    ngx_slab_pool_t             *shpool;
+    list_buf_t                   buf;
+    size_t                       before;
+
+    rc = ngx_http_discard_request_body(r);
+    if (rc != NGX_OK && rc != NGX_AGAIN) {
+        return rc;
+    }
+
+    shctx = get_shctx(r, &shpool);
+    if (shctx == NULL) {
+        return send_error_json(r, NGX_HTTP_INTERNAL_SERVER_ERROR,
+                               "ZONE_NOT_READY");
+    }
+
+    /* Single-entry query via ?q=<ip>. */
+    rc = query_param_lookup(&r->args, "q", 1, q_buf, sizeof(q_buf), &q_len);
+    if (rc == NGX_OK) {
+        q_str.data = q_buf;
+        q_str.len  = q_len;
+        if (ngx_http_blocklist_addr_from_str(&q_str, addr, &family)
+            != NGX_OK)
+        {
+            return send_error_json(r, NGX_HTTP_BAD_REQUEST, "INVALID_IP");
+        }
+
+        rc = ngx_http_blocklist_l1_lookup(shctx, shpool, addr,
+                                           ngx_time(), &expire);
+        if (rc == NGX_DECLINED) {
+            return send_error_json(r, NGX_HTTP_NOT_FOUND, "NOT_FOUND");
+        }
+        return send_ip_success_json(r, NGX_HTTP_OK, addr, family,
+                                     expire, 1);
+    }
+    if (rc != NGX_DECLINED) {
+        return send_error_json(r, NGX_HTTP_BAD_REQUEST, "INVALID_IP");
+    }
+
+    /* Full list. */
+    list_buf_init(&buf, r->pool);
+
+    if (list_buf_reserve(&buf, prefix_len) != NGX_OK) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    ngx_memcpy(buf.data + buf.len, prefix, prefix_len);
+    buf.len += prefix_len;
+    before = buf.len;
+
+    rc = ngx_http_blocklist_l1_walk(shctx, shpool, ngx_time(),
+                                     list_walk_cb, &buf);
+    if (rc != NGX_OK || buf.error != NGX_OK) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* Trim trailing comma from the last appended entry, if any. */
+    if (buf.len > before) {
+        buf.len--;
+    }
+
+    if (list_buf_reserve(&buf, 2) != NGX_OK) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    buf.data[buf.len++] = ']';
+    buf.data[buf.len++] = '}';
+
+    return send_json_response(r, NGX_HTTP_OK, buf.data, buf.len);
 }
 
 

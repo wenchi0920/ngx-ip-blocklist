@@ -239,3 +239,41 @@ l1_unlink_bucket_locked(ngx_http_blocklist_shctx_t *shctx,
         *p = node->hash_next;
     }
 }
+
+
+ngx_int_t
+ngx_http_blocklist_l1_walk(ngx_http_blocklist_shctx_t *shctx,
+    ngx_slab_pool_t *shpool, time_t now,
+    ngx_http_blocklist_walk_pt cb, void *data)
+{
+    ngx_queue_t                *q, *next;
+    ngx_http_blocklist_node_t  *node;
+    ngx_int_t                   rc = NGX_OK;
+
+    ngx_shmtx_lock(&shpool->mutex);
+
+    for (q = ngx_queue_head(&shctx->lru);
+         q != ngx_queue_sentinel(&shctx->lru);
+         q = next)
+    {
+        next = ngx_queue_next(q);
+        node = ngx_queue_data(q, ngx_http_blocklist_node_t, lru_queue);
+
+        if (node->expire != 0 && node->expire <= now) {
+            l1_unlink_bucket_locked(shctx, node);
+            ngx_queue_remove(&node->lru_queue);
+            ngx_slab_free_locked(shpool, node);
+            shctx->size--;
+            shctx->expirations++;
+            continue;
+        }
+
+        rc = cb(node, data);
+        if (rc != NGX_OK) {
+            break;
+        }
+    }
+
+    ngx_shmtx_unlock(&shpool->mutex);
+    return rc;
+}

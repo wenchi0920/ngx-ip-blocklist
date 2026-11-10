@@ -73,4 +73,18 @@ ngx_int_t  ngx_http_blocklist_l1_delete(ngx_http_blocklist_shctx_t *shctx,
     ngx_slab_pool_t *shpool, const u_char addr[16]);
 
 
+/*
+ * Walk every non-expired entry. Expired entries are pruned in-line. The
+ * callback is invoked once per surviving node; if it returns non-OK the walk
+ * stops and that value propagates out. The whole walk holds the slab mutex,
+ * so the callback must not block or do I/O.
+ */
+typedef ngx_int_t (*ngx_http_blocklist_walk_pt)(
+    const ngx_http_blocklist_node_t *node, void *data);
+
+ngx_int_t  ngx_http_blocklist_l1_walk(ngx_http_blocklist_shctx_t *shctx,
+    ngx_slab_pool_t *shpool, time_t now,
+    ngx_http_blocklist_walk_pt cb, void *data);
+
+
 #endif /* NGX_HTTP_BLOCKLIST_L1_H_INCLUDED_ */
