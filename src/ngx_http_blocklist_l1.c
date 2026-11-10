@@ -15,6 +15,7 @@ ngx_http_blocklist_l1_init_zone(ngx_shm_zone_t *shm_zone, void *data)
     ngx_slab_pool_t             *shpool;
     ngx_http_blocklist_shctx_t  *shctx;
     size_t                       bucket_bytes;
+    ngx_uint_t                   nbuckets;
 
     shpool = (ngx_slab_pool_t *) shm_zone->shm.addr;
 
@@ -28,15 +29,26 @@ ngx_http_blocklist_l1_init_zone(ngx_shm_zone_t *shm_zone, void *data)
         return NGX_ERROR;
     }
 
-    bucket_bytes = sizeof(ngx_http_blocklist_node_t *)
-                 * NGX_HTTP_BLOCKLIST_NBUCKETS;
+    /*
+     * Scale buckets with the zone size: roughly one bucket per 256 bytes
+     * of zone. Clamped to [MIN, MAX] and rounded up to the next power of 2
+     * so the lookup can mask with `hash & (nbuckets - 1)`.
+     */
+    nbuckets = NGX_HTTP_BLOCKLIST_NBUCKETS_MIN;
+    while (nbuckets * 256 < shm_zone->shm.size
+           && nbuckets < NGX_HTTP_BLOCKLIST_NBUCKETS_MAX)
+    {
+        nbuckets <<= 1;
+    }
+
+    bucket_bytes = sizeof(ngx_http_blocklist_node_t *) * nbuckets;
 
     shctx->buckets = ngx_slab_calloc(shpool, bucket_bytes);
     if (shctx->buckets == NULL) {
         return NGX_ERROR;
     }
 
-    shctx->nbuckets = NGX_HTTP_BLOCKLIST_NBUCKETS;
+    shctx->nbuckets = nbuckets;
     ngx_queue_init(&shctx->lru);
 
     shctx->size        = 0;
@@ -145,7 +157,18 @@ ngx_http_blocklist_l1_insert(ngx_http_blocklist_shctx_t *shctx,
     }
 
     if (node == NULL) {
+        static time_t  last_warn = 0;
+        time_t         now = ngx_time();
+
         ngx_shmtx_unlock(&shpool->mutex);
+
+        /* Rate-limit to once per minute per worker. */
+        if (now - last_warn > 60) {
+            last_warn = now;
+            ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0,
+                          "blocklist zone full; eviction could not "
+                          "free a slot — raise blocklist_zone size");
+        }
         return NGX_ERROR;
     }
 

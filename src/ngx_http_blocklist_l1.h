@@ -6,7 +6,8 @@
 #include <ngx_core.h>
 
 
-#define NGX_HTTP_BLOCKLIST_NBUCKETS  16384
+#define NGX_HTTP_BLOCKLIST_NBUCKETS_MIN  64
+#define NGX_HTTP_BLOCKLIST_NBUCKETS_MAX  16384
 
 
 typedef struct ngx_http_blocklist_node_s  ngx_http_blocklist_node_t;
