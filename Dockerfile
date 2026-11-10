@@ -19,12 +19,16 @@ RUN apt-get update \
       libssl-dev \
       zlib1g-dev \
       perl \
-      libtest-nginx-perl \
+      cpanminus \
       libio-socket-ssl-perl \
+      libnet-ssleay-perl \
+      libhttp-message-perl \
+      libwww-perl \
       curl \
       ca-certificates \
       nginx \
- && rm -rf /var/lib/apt/lists/*
+ && cpanm --notest --quiet Test::Nginx::Socket \
+ && rm -rf /var/lib/apt/lists/* /root/.cpanm
 
 # Download nginx source whose version matches the installed binary. Modules
 # built with --with-compat against matching major.minor load into the system
