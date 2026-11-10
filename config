@@ -2,11 +2,13 @@ ngx_addon_name=ngx_http_blocklist_module
 
 BLOCKLIST_SRCS="\
     $ngx_addon_dir/src/ngx_http_blocklist_module.c \
-    $ngx_addon_dir/src/ngx_http_blocklist_l1.c"
+    $ngx_addon_dir/src/ngx_http_blocklist_l1.c \
+    $ngx_addon_dir/src/ngx_http_blocklist_api.c"
 
 BLOCKLIST_DEPS="\
     $ngx_addon_dir/src/ngx_http_blocklist_module.h \
-    $ngx_addon_dir/src/ngx_http_blocklist_l1.h"
+    $ngx_addon_dir/src/ngx_http_blocklist_l1.h \
+    $ngx_addon_dir/src/ngx_http_blocklist_api.h"
 
 if test -n "$ngx_module_link"; then
     # Dynamic module build (preferred).

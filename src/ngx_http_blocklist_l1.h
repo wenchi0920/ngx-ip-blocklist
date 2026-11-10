@@ -35,8 +35,42 @@ typedef struct {
 } ngx_http_blocklist_shctx_t;
 
 
+/* Shared memory initialiser passed to ngx_shared_memory_add. */
 ngx_int_t  ngx_http_blocklist_l1_init_zone(ngx_shm_zone_t *shm_zone,
     void *data);
+
+
+/*
+ * CRUD operations. All take the shared ctx + shpool explicitly so they are
+ * testable in isolation. Each acquires the slab mutex around its critical
+ * section.
+ */
+
+/*
+ * NGX_OK      : found & not expired; *expire_out set.
+ * NGX_DECLINED: miss or expired-and-pruned.
+ * Hits/misses counters are not touched here; the caller decides whether
+ * this was an access-phase lookup or an API read.
+ */
+ngx_int_t  ngx_http_blocklist_l1_lookup(ngx_http_blocklist_shctx_t *shctx,
+    ngx_slab_pool_t *shpool, const u_char addr[16],
+    time_t now, time_t *expire_out);
+
+/*
+ * NGX_OK   : new node inserted, LRU tail.
+ * NGX_DONE : existing entry refreshed (expire + family updated, moved to tail).
+ * NGX_ERROR: slab full even after evicting the LRU head.
+ */
+ngx_int_t  ngx_http_blocklist_l1_insert(ngx_http_blocklist_shctx_t *shctx,
+    ngx_slab_pool_t *shpool, const u_char addr[16],
+    uint8_t family, time_t expire);
+
+/*
+ * NGX_OK      : removed.
+ * NGX_DECLINED: not found.
+ */
+ngx_int_t  ngx_http_blocklist_l1_delete(ngx_http_blocklist_shctx_t *shctx,
+    ngx_slab_pool_t *shpool, const u_char addr[16]);
 
 
 #endif /* NGX_HTTP_BLOCKLIST_L1_H_INCLUDED_ */
