@@ -2,6 +2,7 @@
 .superpowers/
 
 # nginx build outputs
+build/
 objs/
 *.o
 *.so
