@@ -134,15 +134,20 @@ ngx_http_blocklist_l1_insert(ngx_http_blocklist_shctx_t *shctx,
         return NGX_DONE;
     }
 
-    for (retries = 0; retries < 2; retries++) {
+    /*
+     * Try alloc; on failure, evict the LRU head *once* and retry. If the
+     * second alloc still fails give up without evicting again, since
+     * another worker would have observed the same shortage.
+     */
+    retries = 0;
+    for ( ;; ) {
         node = ngx_slab_alloc_locked(shpool,
             sizeof(ngx_http_blocklist_node_t));
         if (node != NULL) {
             break;
         }
 
-        if (ngx_queue_empty(&shctx->lru)) {
-            /* Nothing to evict. */
+        if (retries++ || ngx_queue_empty(&shctx->lru)) {
             break;
         }
 

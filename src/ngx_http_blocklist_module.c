@@ -320,8 +320,18 @@ ngx_http_blocklist_access_handler(ngx_http_request_t *r)
         || mcf->shm_zone->shm.addr == NULL
         || mcf->shm_zone->data == NULL)
     {
-        ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
-                      "blocklist: zone not available; passing request");
+        /*
+         * Rate-limited warn: a misconfigured deployment or the narrow
+         * window during reload before the zone is wired would otherwise
+         * flood error.log at request rate.
+         */
+        static time_t  last_zone_warn = 0;
+        time_t         now = ngx_time();
+        if (now - last_zone_warn > 60) {
+            last_zone_warn = now;
+            ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+                          "blocklist: zone not available; passing request");
+        }
         return NGX_DECLINED;
     }
 
@@ -337,11 +347,12 @@ ngx_http_blocklist_access_handler(ngx_http_request_t *r)
     rc = ngx_http_blocklist_l1_lookup(shctx, shpool, addr,
                                        ngx_time(), &expire);
     if (rc == NGX_OK) {
-        shctx->hits++;
+        /* Counters touched outside the slab mutex must be atomic. */
+        (void) ngx_atomic_fetch_add(&shctx->hits, 1);
         return lcf->status;
     }
 
-    shctx->misses++;
+    (void) ngx_atomic_fetch_add(&shctx->misses, 1);
     return NGX_DECLINED;
 }
 

@@ -58,6 +58,16 @@ ngx_http_blocklist_api_handler(ngx_http_request_t *r)
     sub.data = r->uri.data + clcf->name.len;
     sub.len  = r->uri.len - clcf->name.len;
 
+    /*
+     * Tolerate both prefix-with-trailing-slash (`location /api/`) and
+     * prefix-without (`location /api`): the latter leaves a leading '/'
+     * on the sub-path.
+     */
+    if (sub.len > 0 && sub.data[0] == '/') {
+        sub.data++;
+        sub.len--;
+    }
+
     if (sub.len == 2 && ngx_strncmp(sub.data, "ip", 2) == 0) {
 
         if (r->method == NGX_HTTP_POST) {
@@ -465,15 +475,40 @@ send_json_response(ngx_http_request_t *r, ngx_uint_t status,
 }
 
 
+/*
+ * Error codes are a closed set of [A-Z_]+ tokens; the `code` field is the
+ * machine-readable key that clients branch on, and `error` is a prose
+ * message a human can read in a log.
+ */
+static const char *
+error_message_for(const char *code)
+{
+    if (ngx_strcmp(code, "INVALID_IP") == 0)         return "invalid IP address";
+    if (ngx_strcmp(code, "INVALID_BODY") == 0)       return "request body is not valid JSON";
+    if (ngx_strcmp(code, "INVALID_TTL") == 0)        return "ttl must be a non-negative integer";
+    if (ngx_strcmp(code, "BODY_TOO_LARGE") == 0)     return "request body exceeds 4 KiB limit";
+    if (ngx_strcmp(code, "MISSING_PARAM") == 0)      return "required query parameter missing";
+    if (ngx_strcmp(code, "METHOD_NOT_ALLOWED") == 0) return "method not allowed for this endpoint";
+    if (ngx_strcmp(code, "NOT_FOUND") == 0)          return "no matching entry";
+    if (ngx_strcmp(code, "ZONE_FULL") == 0)          return "blocklist zone is full";
+    if (ngx_strcmp(code, "ZONE_NOT_READY") == 0)     return "blocklist zone not initialised";
+    if (ngx_strcmp(code, "NOT_IMPLEMENTED") == 0)    return "not implemented";
+    return code;
+}
+
+
 static ngx_int_t
 send_error_json(ngx_http_request_t *r, ngx_uint_t status, const char *code)
 {
-    u_char  body[256];
-    u_char *p;
+    u_char      body[256];
+    u_char     *p;
+    const char *msg;
+
+    msg = error_message_for(code);
 
     p = ngx_snprintf(body, sizeof(body),
                      "{\"ok\":false,\"error\":\"%s\",\"code\":\"%s\"}",
-                     code, code);
+                     msg, code);
     return send_json_response(r, status, body, p - body);
 }
 
@@ -521,6 +556,32 @@ add_allow_header(ngx_http_request_t *r, ngx_str_t *value)
 }
 
 
+/*
+ * Byte-wise constant-time equality. Scans up to max(na, nb) positions,
+ * substituting 0 past the end of the shorter input, and ORs every XOR
+ * difference (including the length mismatch) into a running total. Returns
+ * NGX_OK iff both arrays and both lengths match; no early-exit on the
+ * first differing byte.
+ */
+static ngx_int_t
+constant_time_eq(const u_char *a, size_t na, const u_char *b, size_t nb)
+{
+    size_t        i, maxlen;
+    unsigned int  diff;
+
+    maxlen = (na > nb) ? na : nb;
+    diff   = (unsigned int) (na ^ nb);
+
+    for (i = 0; i < maxlen; i++) {
+        u_char  ca = (i < na) ? a[i] : 0;
+        u_char  cb = (i < nb) ? b[i] : 0;
+        diff |= (unsigned int) (ca ^ cb);
+    }
+
+    return (diff == 0) ? NGX_OK : NGX_ERROR;
+}
+
+
 static ngx_int_t
 check_auth(ngx_http_request_t *r, ngx_str_t *token)
 {
@@ -542,16 +603,7 @@ check_auth(ngx_http_request_t *r, ngx_str_t *token)
     provided     = auth->value.data + bearer_len;
     provided_len = auth->value.len  - bearer_len;
 
-    /*
-     * Constant-time, length-aware comparison. ngx_memn2cmp compares the
-     * common prefix, then returns a non-zero result when the lengths differ,
-     * so a longer-than-configured token does not short-circuit at byte 0.
-     */
-    if (ngx_memn2cmp(provided, token->data, provided_len, token->len) != 0) {
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
+    return constant_time_eq(provided, provided_len, token->data, token->len);
 }
 
 
