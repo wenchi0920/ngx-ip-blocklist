@@ -28,16 +28,25 @@ static ngx_http_blocklist_shctx_t *get_shctx(ngx_http_request_t *r,
     ngx_slab_pool_t **shpool_out);
 
 static void       add_allow_header(ngx_http_request_t *r, ngx_str_t *value);
+static ngx_int_t  check_auth(ngx_http_request_t *r, ngx_str_t *token);
+static ngx_int_t  send_unauthorized(ngx_http_request_t *r);
 
 
 ngx_int_t
 ngx_http_blocklist_api_handler(ngx_http_request_t *r)
 {
-    ngx_http_core_loc_conf_t  *clcf;
-    ngx_str_t                  sub;
-    ngx_str_t                  allow;
+    ngx_http_core_loc_conf_t       *clcf;
+    ngx_http_blocklist_loc_conf_t  *lcf;
+    ngx_str_t                       sub;
+    ngx_str_t                       allow;
 
+    lcf = ngx_http_get_module_loc_conf(r, ngx_http_blocklist_module);
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+
+    /* Auth gate — rejects before the body is read or state is touched. */
+    if (check_auth(r, &lcf->api_token) != NGX_OK) {
+        return send_unauthorized(r);
+    }
 
     if (r->uri.len < clcf->name.len
         || ngx_strncmp(r->uri.data, clcf->name.data, clcf->name.len) != 0)
@@ -352,6 +361,61 @@ add_allow_header(ngx_http_request_t *r, ngx_str_t *value)
     h->hash = 1;
     ngx_str_set(&h->key, "Allow");
     h->value = *value;
+}
+
+
+static ngx_int_t
+check_auth(ngx_http_request_t *r, ngx_str_t *token)
+{
+    static const u_char  bearer[] = "Bearer ";
+    const size_t         bearer_len = sizeof(bearer) - 1;
+    ngx_table_elt_t     *auth;
+    u_char              *provided;
+    size_t               provided_len;
+
+    auth = r->headers_in.authorization;
+    if (auth == NULL || auth->value.len < bearer_len) {
+        return NGX_ERROR;
+    }
+
+    if (ngx_strncmp(auth->value.data, bearer, bearer_len) != 0) {
+        return NGX_ERROR;
+    }
+
+    provided     = auth->value.data + bearer_len;
+    provided_len = auth->value.len  - bearer_len;
+
+    /*
+     * Constant-time, length-aware comparison. ngx_memn2cmp compares the
+     * common prefix, then returns a non-zero result when the lengths differ,
+     * so a longer-than-configured token does not short-circuit at byte 0.
+     */
+    if (ngx_memn2cmp(provided, token->data, provided_len, token->len) != 0) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+send_unauthorized(ngx_http_request_t *r)
+{
+    ngx_table_elt_t  *h;
+
+    ngx_http_discard_request_body(r);
+
+    h = ngx_list_push(&r->headers_out.headers);
+    if (h != NULL) {
+        h->hash = 1;
+        ngx_str_set(&h->key, "WWW-Authenticate");
+        ngx_str_set(&h->value, "Bearer");
+    }
+
+    r->headers_out.status = NGX_HTTP_UNAUTHORIZED;
+    r->headers_out.content_length_n = 0;
+    r->header_only = 1;
+    return ngx_http_send_header(r);
 }
 
 

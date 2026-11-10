@@ -49,6 +49,13 @@ static ngx_command_t  ngx_http_blocklist_commands[] = {
       0,
       NULL },
 
+    { ngx_string("blocklist_api_token"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_blocklist_loc_conf_t, api_token),
+      NULL },
+
     ngx_null_command
 };
 
@@ -127,6 +134,13 @@ ngx_http_blocklist_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_uint_value(conf->status, prev->status, NGX_HTTP_FORBIDDEN);
     ngx_conf_merge_value(conf->api_enabled, prev->api_enabled, 0);
     ngx_conf_merge_str_value(conf->api_token, prev->api_token, "");
+
+    if (conf->api_enabled == 1 && conf->api_token.len == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+            "\"blocklist_api_token\" must be set when "
+            "\"blocklist_api\" is enabled");
+        return NGX_CONF_ERROR;
+    }
 
     return NGX_CONF_OK;
 }

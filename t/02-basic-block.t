@@ -10,13 +10,13 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
     location / { blocklist on; return 200; }
 --- pipelined_requests eval
 [
-    "POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
+    "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
     "GET /\r\nHost: localhost\r\n\r\n",
-    "DELETE /api/ip?ip=127.0.0.1\r\nHost: localhost\r\n\r\n",
+    "DELETE /api/ip?ip=127.0.0.1\r\nHost: localhost\r\nAuthorization: Bearer t\r\n\r\n",
     "GET /\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
@@ -28,11 +28,11 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
     location / { blocklist off; return 200; }
 --- pipelined_requests eval
 [
-    "POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
+    "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
     "GET /\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
@@ -44,11 +44,11 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
     location / { blocklist on; blocklist_status 429; return 200; }
 --- pipelined_requests eval
 [
-    "POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
+    "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
     "GET /\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
@@ -60,11 +60,11 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
 --- pipelined_requests eval
 [
-    "POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
-    "POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
+    "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
+    "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
 ]
 --- error_code eval
 [201, 200]
@@ -75,7 +75,9 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
+--- more_headers
+Authorization: Bearer t
 --- request
 DELETE /api/ip?ip=10.0.0.1
 --- error_code: 404
@@ -86,9 +88,11 @@ DELETE /api/ip?ip=10.0.0.1
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
+--- more_headers
+Authorization: Bearer t
 --- request eval
-"POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 9\r\n\r\n{not-json"
+"POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: Bearer t\r\nContent-Length: 9\r\n\r\n{not-json"
 --- error_code: 400
 --- response_body_like: INVALID_BODY
 
@@ -99,9 +103,11 @@ DELETE /api/ip?ip=10.0.0.1
     blocklist_zone zone=bl:1m;
     client_max_body_size 1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
+--- more_headers
+Authorization: Bearer t
 --- request eval
-"POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 5000\r\n\r\n" . ("x" x 5000)
+"POST /api/ip\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: Bearer t\r\nContent-Length: 5000\r\n\r\n" . ("x" x 5000)
 --- error_code: 413
 --- response_body_like: BODY_TOO_LARGE
 
@@ -111,7 +117,9 @@ DELETE /api/ip?ip=10.0.0.1
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location /api/ { blocklist_api; }
+    location /api/ { blocklist_api; blocklist_api_token "t"; }
+--- more_headers
+Authorization: Bearer t
 --- request
 DELETE /api/ip
 --- error_code: 400
