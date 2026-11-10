@@ -1,0 +1,18 @@
+# superpowers scratch workspace
+.superpowers/
+
+# nginx build outputs
+objs/
+*.o
+*.so
+*.lo
+
+# test runtime
+t/servroot/
+t/*.t.err
+*.log
+
+# editor
+*.swp
+.idea/
+.vscode/
