@@ -8,7 +8,7 @@ __DATA__
 
 === TEST 1: module loaded, nginx starts with empty http{}
 --- config
-    location / { return 204; }
+    location = /t { return 204; }
 --- request
-GET /
+GET /t
 --- error_code: 204

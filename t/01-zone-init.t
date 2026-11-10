@@ -10,16 +10,16 @@ __DATA__
 --- http_config
     blocklist_zone zone=bl:1m;
 --- config
-    location / { return 204; }
+    location = /t { return 204; }
 --- request
-GET /
+GET /t
 --- error_code: 204
 
 === TEST 2: missing zone size is a config error
 --- http_config
     blocklist_zone zone=bl;
 --- config
-    location / { return 204; }
+    location = /t { return 204; }
 --- must_die
 --- error_log
 invalid
@@ -29,7 +29,7 @@ invalid
     blocklist_zone zone=a:1m;
     blocklist_zone zone=b:1m;
 --- config
-    location / { return 204; }
+    location = /t { return 204; }
 --- must_die
 --- error_log
 duplicate

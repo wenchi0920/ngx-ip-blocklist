@@ -20,12 +20,12 @@ __DATA__
     real_ip_header X-Forwarded-For;
     real_ip_recursive on;
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist on; return 200; }
+    location = /t { blocklist on; return 200; }
 --- pipelined_requests eval
 [
     "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 16\r\n\r\n{\"ip\":\"9.9.9.9\"}",
-    "GET /\r\nHost: localhost\r\nX-Forwarded-For: 9.9.9.9\r\n\r\n",
-    "GET /\r\nHost: localhost\r\nX-Forwarded-For: 1.2.3.4\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\nX-Forwarded-For: 9.9.9.9\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\nX-Forwarded-For: 1.2.3.4\r\n\r\n",
 ]
 --- error_code eval
 [201, 403, 200]

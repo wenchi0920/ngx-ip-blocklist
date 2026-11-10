@@ -11,13 +11,13 @@ __DATA__
     blocklist_zone zone=bl:1m;
 --- config
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist on; return 200; }
+    location = /t { blocklist on; return 200; }
 --- pipelined_requests eval
 [
     "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
-    "GET /\r\nHost: localhost\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\n\r\n",
     "DELETE /api/ip?ip=127.0.0.1\r\nHost: localhost\r\nAuthorization: Bearer t\r\n\r\n",
-    "GET /\r\nHost: localhost\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
 [201, 403, 200, 200]
@@ -29,11 +29,11 @@ __DATA__
     blocklist_zone zone=bl:1m;
 --- config
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist off; return 200; }
+    location = /t { blocklist off; return 200; }
 --- pipelined_requests eval
 [
     "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
-    "GET /\r\nHost: localhost\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
 [201, 200]
@@ -45,11 +45,11 @@ __DATA__
     blocklist_zone zone=bl:1m;
 --- config
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist on; blocklist_status 429; return 200; }
+    location = /t { blocklist on; blocklist_status 429; return 200; }
 --- pipelined_requests eval
 [
     "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"ip\":\"127.0.0.1\"}\r\n",
-    "GET /\r\nHost: localhost\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
 [201, 429]

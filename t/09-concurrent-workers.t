@@ -20,7 +20,7 @@ __DATA__
     blocklist_zone zone=bl:4m;
 --- config
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist on; return 200; }
+    location = /t { blocklist on; return 200; }
 --- pipelined_requests eval
 [
     (map {
@@ -32,7 +32,7 @@ __DATA__
                 . "Content-Length: " . length($body) . "\r\n\r\n"
                 . $body
         } else {
-            "GET /\r\nHost: localhost\r\n\r\n"
+            "GET /t\r\nHost: localhost\r\n\r\n"
         }
     } 0..399),
 ]

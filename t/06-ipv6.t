@@ -75,11 +75,11 @@ Authorization: Bearer t
 --- config
     listen [::1]:$TEST_NGINX_SERVER_PORT;
     location /api/ { blocklist_api; blocklist_api_token "t"; }
-    location / { blocklist on; return 200; }
+    location = /t { blocklist on; return 200; }
 --- pipelined_requests eval
 [
     "POST /api/ip\r\nHost: localhost\r\nAuthorization: Bearer t\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ip\":\"::1\"}",
-    "GET /\r\nHost: localhost\r\n\r\n",
+    "GET /t\r\nHost: localhost\r\n\r\n",
 ]
 --- error_code eval
 [201, 403]
