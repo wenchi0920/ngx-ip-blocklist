@@ -20,7 +20,7 @@ static ngx_int_t  send_ip_success_json(ngx_http_request_t *r,
     time_t expire, ngx_flag_t with_expire);
 
 static ngx_int_t  parse_post_body(const u_char *buf, size_t len,
-    ngx_str_t *ip_out, ngx_int_t *ttl_out);
+    ngx_str_t *ip_out, ngx_int_t *ttl_out, const char **err_code_out);
 static ngx_int_t  query_param_lookup(ngx_str_t *args, const char *key,
     size_t keylen, u_char *out, size_t outcap, size_t *outlen);
 
@@ -161,10 +161,16 @@ api_post_ip_body_handler(ngx_http_request_t *r)
         body_len += len;
     }
 
-    if (parse_post_body(buf, body_len, &ip_text, &ttl) != NGX_OK) {
-        rc = send_error_json(r, NGX_HTTP_BAD_REQUEST, "INVALID_BODY");
-        ngx_http_finalize_request(r, rc);
-        return;
+    {
+        const char *err_code = NULL;
+        if (parse_post_body(buf, body_len, &ip_text, &ttl, &err_code)
+            != NGX_OK)
+        {
+            rc = send_error_json(r, NGX_HTTP_BAD_REQUEST,
+                                  err_code ? err_code : "INVALID_BODY");
+            ngx_http_finalize_request(r, rc);
+            return;
+        }
     }
 
     if (ngx_http_blocklist_addr_from_str(&ip_text, addr, &family) != NGX_OK) {
@@ -676,7 +682,7 @@ parse_integer(const u_char **pp, const u_char *end, ngx_int_t *out)
 
 static ngx_int_t
 parse_post_body(const u_char *buf, size_t len,
-    ngx_str_t *ip_out, ngx_int_t *ttl_out)
+    ngx_str_t *ip_out, ngx_int_t *ttl_out, const char **err_code_out)
 {
     const u_char  *p = buf;
     const u_char  *end = buf + len;
@@ -685,6 +691,9 @@ parse_post_body(const u_char *buf, size_t len,
 
     *ttl_out = 0;
     ngx_str_null(ip_out);
+    if (err_code_out) {
+        *err_code_out = "INVALID_BODY";
+    }
 
     if (expect_ch(&p, end, '{') != NGX_OK) {
         return NGX_ERROR;
@@ -715,6 +724,9 @@ parse_post_body(const u_char *buf, size_t len,
 
         } else if (key.len == 3 && ngx_strncmp(key.data, "ttl", 3) == 0) {
             if (parse_integer(&p, end, ttl_out) != NGX_OK) {
+                if (err_code_out) {
+                    *err_code_out = "INVALID_TTL";
+                }
                 return NGX_ERROR;
             }
 
@@ -737,6 +749,10 @@ parse_post_body(const u_char *buf, size_t len,
     /* Trailing whitespace/CRLF after the object is tolerated. */
     if (!saw_ip) {
         return NGX_ERROR;
+    }
+
+    if (err_code_out) {
+        *err_code_out = NULL;
     }
     return NGX_OK;
 }
