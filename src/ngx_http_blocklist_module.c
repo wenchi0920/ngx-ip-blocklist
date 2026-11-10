@@ -1,4 +1,5 @@
 #include "ngx_http_blocklist_module.h"
+#include "ngx_http_blocklist_l1.h"
 
 
 typedef struct {
@@ -21,9 +22,18 @@ typedef struct {
 
 static void *ngx_http_blocklist_create_main_conf(ngx_conf_t *cf);
 static void *ngx_http_blocklist_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_blocklist_zone(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 
 
 static ngx_command_t  ngx_http_blocklist_commands[] = {
+
+    { ngx_string("blocklist_zone"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_http_blocklist_zone,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      0,
+      NULL },
 
     ngx_null_command
 };
@@ -90,4 +100,100 @@ ngx_http_blocklist_create_loc_conf(ngx_conf_t *cf)
     /* api_token is zero-initialised by ngx_pcalloc. */
 
     return lcf;
+}
+
+
+static char *
+ngx_http_blocklist_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_blocklist_main_conf_t  *mcf = conf;
+
+    ngx_str_t        *value;
+    ngx_str_t         name, s;
+    ngx_shm_zone_t   *shm_zone;
+    ssize_t           size;
+    u_char           *p;
+    ngx_uint_t        i;
+
+    value   = cf->args->elts;
+    name.len  = 0;
+    name.data = NULL;
+    size      = 0;
+
+    for (i = 1; i < cf->args->nelts; i++) {
+
+        if (ngx_strncmp(value[i].data, "zone=", 5) == 0) {
+
+            name.data = value[i].data + 5;
+
+            p = (u_char *) ngx_strchr(name.data, ':');
+            if (p == NULL) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid zone \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            name.len = p - name.data;
+            if (name.len == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid zone name in \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            s.data = p + 1;
+            s.len  = value[i].data + value[i].len - s.data;
+
+            size = ngx_parse_size(&s);
+            if (size == NGX_ERROR) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid zone size \"%V\"", &s);
+                return NGX_CONF_ERROR;
+            }
+
+            if (size < (ssize_t) (8 * ngx_pagesize)) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "blocklist_zone \"%V\" is too small",
+                                   &name);
+                return NGX_CONF_ERROR;
+            }
+
+            continue;
+        }
+
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid parameter \"%V\"", &value[i]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (name.len == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "\"%V\" requires \"zone=NAME:SIZE\" parameter",
+                           &cmd->name);
+        return NGX_CONF_ERROR;
+    }
+
+    if (mcf->shm_zone != NULL) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "duplicate blocklist_zone directive");
+        return NGX_CONF_ERROR;
+    }
+
+    shm_zone = ngx_shared_memory_add(cf, &name, size,
+                                     &ngx_http_blocklist_module);
+    if (shm_zone == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    if (shm_zone->data != NULL) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "blocklist_zone \"%V\" is already in use", &name);
+        return NGX_CONF_ERROR;
+    }
+
+    shm_zone->init = ngx_http_blocklist_l1_init_zone;
+    shm_zone->data = NULL;
+
+    mcf->shm_zone = shm_zone;
+
+    return NGX_CONF_OK;
 }
